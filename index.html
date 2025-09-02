@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mufado - Underground Runner</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Nosifer&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(45deg, #1a1a1a, #2d2d2d, #1a1a1a);
+            background-size: 400% 400%;
+            animation: gradientShift 8s ease infinite;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Creepster', cursive;
+        }
+        
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        #gameContainer {
+            background: #0a0a0a;
+            border: 3px solid #ff6b35;
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(255, 107, 53, 0.5);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .instructions {
+            color: #00ff9f;
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 18px;
+            text-shadow: 0 0 10px #00ff9f, 0 0 20px #00ff9f;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .instructions h2 {
+            font-family: 'Nosifer', cursive;
+            color: #ff6b35;
+            font-size: 28px;
+            margin: 10px 0;
+            text-shadow: 0 0 15px #ff6b35, 0 0 25px #ff6b35;
+            letter-spacing: 3px;
+        }
+        
+        .controls {
+            color: #ff3068;
+            text-align: center;
+            margin-top: 15px;
+            font-size: 14px;
+            text-shadow: 0 0 8px #ff3068;
+            position: relative;
+            z-index: 1;
+        }
+        
+        #sketch {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="instructions">
+            <h2>🏃‍♂️ MUFADO</h2>
+            <p>UNDERGROUND RUNNER</p>
+            <p>¡2 minutos hasta la libertad!</p>
+        </div>
+        
+        <div id="sketch"></div>
+        
+        <div class="controls">
+            <p><strong>CONTROLES:</strong></p>
+            <p>🚀 ESPACIO - Saltar | ⬅️➡️ FLECHAS - Mover | 🔄 R - Reiniciar</p>
+        </div>
+    </div>
+
+    <script>
+        // Variables del juego
+        let player;
+        let obstacles = [];
+        let projectiles = [];
+        let powerups = [];
+        let pipes = [];
+        let graffitis = [];
+        let score = 0;
+        let gameState = 'playing'; // 'playing', 'victory', 'gameOver'
+        let gameSpeed = 8;
+        let maxSpeed = 25;
+        
+        // Sistema de tiempo - 2 minutos (7200 frames a 60fps)
+        let totalGameTime = 7200;
+        let currentTime = 0;
+        let timeProgress = 0;
+        
+        // Timers para spawns
+        let obstacleTimer = 0;
+        let projectileTimer = 0;
+        let powerupTimer = 0;
+        
+        // Variables de sprites
+        let playerSprites = {
+            idle: null,
+            run: [],
+            jump: null,
+            damage: null
+        };
+        
+        let backgroundImg;
+        let backgroundX = 0;
+        
+        // Partículas
+        let sparkles = [];
+        let smokeParticles = [];
+        
+        function preload() {
+            // Aquí cargarías tus sprites reales:
+            playerSprites.idle = loadImage('assets/idle.png');
+            playerSprites.run[0] = loadImage('assets/run1.png');
+            playerSprites.run[1] = loadImage('assets/run2.png');
+            playerSprites.jump = loadImage('assets/jump.png');
+            playerSprites.damage = loadImage('assets/damage.png');
+            backgroundImg = loadImage('assets/background.png');
+        }
+        
+        function setup() {
+            let canvas = createCanvas(800, 400);
+            canvas.parent('sketch');
+            
+            // Crear el jugador
+            player = {
+                x: 100,
+                y: 190, // Posición en el suelo
+                width: 50,
+                height: 100,
+                velY: 0,
+                grounded: true,
+                state: 'idle',
+                health: 3,
+                invulnerable: false,
+                invulnerableTime: 0
+            };
+            
+        
+            
+            // Crear partículas iniciales
+            for (let i = 0; i < 20; i++) {
+                sparkles.push(createSparkle());
+            }
+        }
+        
+        function draw() {
+            drawSimpleBackground();
+            
+            if (gameState === 'playing') {
+                updateGame();
+            }
+            
+            drawTunnelElements();
+            drawPlayer();
+            drawObstacles();
+            drawProjectiles();
+            drawPowerups();
+            drawParticles();
+            drawUI();
+            
+            if (gameState === 'victory') {
+                drawVictory();
+            } else if (gameState === 'gameOver') {
+                drawGameOver();
+            }
+        }
+        
+        function updateGame() {
+            currentTime++;
+            timeProgress = currentTime / totalGameTime;
+            
+            // Verificar victoria
+            if (currentTime >= totalGameTime) {
+                gameState = 'victory';
+                return;
+            }
+            
+            // Aumentar velocidad progresivamente
+            gameSpeed = 8 + (maxSpeed - 8) * Math.pow(timeProgress, 1.2);
+            
+            // Actualizar jugador
+            updatePlayer();
+            
+            // Actualizar elementos
+            updateObstacles();
+            updateProjectiles();
+            updatePowerups();
+            
+            // Verificar colisiones
+            checkCollisions();
+            
+            // Spawn logic con timers más rápidos
+            obstacleTimer++;
+            projectileTimer++;
+            powerupTimer++;
+            
+            // Generar nuevos obstáculos (más frecuentes)
+            let obstacleFrequency = 80 - (timeProgress * 30);
+            if (obstacleTimer > obstacleFrequency) {
+                spawnObstacle();
+                obstacleTimer = 0;
+            }
+            
+            // Generar proyectiles (piedras) más frecuentes
+            let projectileFrequency = 100 - (timeProgress * 40);
+            if (projectileTimer > projectileFrequency) {
+                spawnProjectile();
+                projectileTimer = 0;
+            }
+            
+            // Generar powerups
+            if (powerupTimer > 400) { // Cada 6-7 segundos
+                spawnPowerup();
+                powerupTimer = 0;
+            }
+            
+            // Actualizar partículas
+            updateParticles();
+            
+            // Generar humo del movimiento
+            if (frameCount % 2 === 0) {
+                smokeParticles.push(createSmoke());
+            }
+        }
+        
+        function updatePlayer() {
+            // Física de salto
+            if (!player.grounded) {
+                player.velY += 1.2; // Gravedad más fuerte
+                player.y += player.velY;
+                
+                if (player.y >= 190) { // Suelo a 190
+                    player.y = 190;
+                    player.grounded = true;
+                    player.velY = 0;
+                    if (player.state === 'jumping') {
+                        player.state = 'running';
+                    }
+                }
+            }
+            
+            // Movimiento horizontal más rápido
+            if (keyIsDown(LEFT_ARROW) && player.x > 50) {
+                player.x -= 6;
+            }
+            if (keyIsDown(RIGHT_ARROW) && player.x < width - 100) {
+                player.x += 6;
+            }
+            
+            // Estado del jugador
+            if (player.grounded && !keyIsDown(LEFT_ARROW) && !keyIsDown(RIGHT_ARROW)) {
+                if (player.state !== 'damage') {
+                    player.state = 'idle';
+                }
+            } else if (player.grounded && (keyIsDown(LEFT_ARROW) || keyIsDown(RIGHT_ARROW))) {
+                if (player.state !== 'damage') {
+                    player.state = 'running';
+                }
+            }
+            
+            // Invulnerabilidad
+            if (player.invulnerable) {
+                player.invulnerableTime--;
+                if (player.invulnerableTime <= 0) {
+                    player.invulnerable = false;
+                    if (player.state === 'damage') {
+                        player.state = 'idle';
+                    }
+                }
+            }
+        }
+        
+        function drawSimpleBackground() {
+            // Fondo simple sin efectos neón
+            background(25, 25, 35);
+            
+            // Si hay imagen de fondo, usarla
+            if (backgroundImg && backgroundImg.width > 0) {
+                let bgWidth = backgroundImg.width;
+                let bgHeight = backgroundImg.height;
+                let scaleY = height / bgHeight;
+                let scaledWidth = bgWidth * scaleY;
+                let numTiles = Math.ceil(width / scaledWidth) + 2;
+                
+                for (let i = -1; i < numTiles; i++) {
+                    let x = (i * scaledWidth) + (backgroundX * 0.5) % scaledWidth;
+                    image(backgroundImg, x, 0, scaledWidth, height);
+                }
+            }
+            
+            
+        }
+        
+        function generateTunnelElements() {
+            // Generar tuberías y elementos decorativos
+            for (let i = 0; i < 5; i++) {
+                pipes.push({
+                    x: i * 200 + 100,
+                    y: 80 + random(50),
+                    width: 15 + random(10),
+                    height: 200 + random(100),
+                    color: [80, 70, 60]
+                });
+                
+                graffitis.push({
+                    x: i * 150 + random(50),
+                    y: 100 + random(200),
+                    type: random(['tag', 'stencil', 'bubble']),
+                    size: random(20, 40)
+                });
+            }
+        }
+        
+        function drawTunnelElements() {
+            // Dibujar tuberías
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                let pipe = pipes[i];
+                pipe.x -= gameSpeed * 0.7;
+                
+                if (pipe.x < -50) {
+                    pipe.x = width + random(100);
+                    pipe.y = 80 + random(50);
+                }
+                
+                // Tubería simple
+                fill(pipe.color[0], pipe.color[1], pipe.color[2]);
+                rect(pipe.x, pipe.y, pipe.width, pipe.height);
+                
+                // Brillo
+                fill(pipe.color[0] + 30, pipe.color[1] + 30, pipe.color[2] + 30);
+                rect(pipe.x + 2, pipe.y + 2, pipe.width - 4, 8);
+            }
+            
+            // Dibujar graffitis simples
+            for (let i = graffitis.length - 1; i >= 0; i--) {
+                let graf = graffitis[i];
+                graf.x -= gameSpeed * 0.4;
+                
+                if (graf.x < -100) {
+                    graf.x = width + random(200);
+                    graf.y = 100 + random(200);
+                }
+                
+                fill(120, 120, 140);
+                noStroke();
+                ellipse(graf.x, graf.y, graf.size, graf.size/2);
+            }
+        }
+        
+        function drawPlayer() {
+            push();
+            translate(player.x + player.width/2, player.y + player.height/2);
+            
+            // Efecto de parpadeo cuando está invulnerable (SIN ESCUDO)
+            if (player.invulnerable && frameCount % 10 < 5) {
+                tint(255, 100);
+            }
+            
+            drawPlayerSprite();
+            
+            noTint();
+            pop();
+        }
+        
+        function drawPlayerSprite() {
+            // Si las imágenes están cargadas, usarlas
+            if (playerSprites.idle && playerSprites.idle.width > 0) {
+                let currentSprite;
+                let spriteWidth = 50;
+                let spriteHeight = 100;
+                
+                switch (player.state) {
+                    case 'idle':
+                        currentSprite = playerSprites.idle;
+                        break;
+                    case 'running':
+                        let runFrame = Math.floor(frameCount / 6) % 2;
+                        currentSprite = playerSprites.run[runFrame];
+                        break;
+                    case 'jumping':
+                        currentSprite = playerSprites.jump;
+                        break;
+                    case 'damage':
+                        currentSprite = playerSprites.damage;
+                        break;
+                }
+                
+                if (currentSprite) {
+                    image(currentSprite, -spriteWidth/2, -spriteHeight/2, spriteWidth, spriteHeight);
+                }
+                
+                noTint();
+            } else {
+                // Fallback: formas simples sin efectos neón
+                switch (player.state) {
+                    case 'idle':
+                        fill(100, 150, 100);
+                        ellipse(0, 0, player.width, player.height);
+                        // Ojos
+                        fill(255);
+                        ellipse(-8, -10, 6, 6);
+                        ellipse(8, -10, 6, 6);
+                        break;
+                        
+                    case 'running':
+                        let runPulse = sin(frameCount * 0.5) * 2;
+                        fill(100, 150, 100);
+                        ellipse(0, runPulse, player.width, player.height);
+                        
+                        // Ojos
+                        fill(255);
+                        ellipse(-8, -10 + runPulse, 6, 6);
+                        ellipse(8, -10 + runPulse, 6, 6);
+                        break;
+                        
+                    case 'jumping':
+                        fill(100, 150, 150);
+                        ellipse(0, -5, player.width + 5, player.height + 5);
+                        
+                        // Ojos
+                        fill(255);
+                        ellipse(-8, -15, 8, 8);
+                        ellipse(8, -15, 8, 8);
+                        break;
+                        
+                    case 'damage':
+                        fill(150, 100, 100);
+                        ellipse(0, 0, player.width, player.height);
+                        
+                        // X en los ojos
+                        stroke(255);
+                        strokeWeight(2);
+                        line(-12, -14, -4, -6);
+                        line(-4, -14, -12, -6);
+                        line(4, -14, 12, -6);
+                        line(12, -14, 4, -6);
+                        noStroke();
+                        break;
+                }
+            }
+        }
+        
+        function drawObstacles() {
+            for (let obstacle of obstacles) {
+                // Obstáculo simple sin efectos neón
+                fill(80, 80, 90);
+                rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                
+                // Borde simple
+                stroke(120, 120, 130);
+                strokeWeight(1);
+                noFill();
+                rect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                noStroke();
+            }
+        }
+        
+        function drawProjectiles() {
+            for (let proj of projectiles) {
+                push();
+                translate(proj.x + proj.width/2, proj.y + proj.height/2);
+                rotate(proj.rotation);
+                
+                // Piedra simple
+                fill(80, 70, 60);
+                stroke(60, 50, 40);
+                strokeWeight(1);
+                ellipse(0, 0, proj.width, proj.height);
+                
+                // Detalles de la piedra
+                fill(100, 90, 80);
+                noStroke();
+                ellipse(-3, -2, 4, 3);
+                ellipse(2, 3, 3, 2);
+                
+                pop();
+            }
+        }
+        
+        function drawPowerups() {
+            for (let powerup of powerups) {
+                push();
+                translate(powerup.x + powerup.width/2, powerup.y + powerup.height/2);
+                
+                // Movimiento de flotación
+                let bobY = sin(frameCount * 0.15 + powerup.bobOffset) * 4;
+                translate(0, bobY);
+                
+                // Botella de cerveza
+                fill(139, 69, 19); // Marrón
+                stroke(100, 50, 20);
+                strokeWeight(2);
+                rect(-powerup.width/2, -powerup.height/2, powerup.width, powerup.height);
+                
+                // Etiqueta
+                fill(255, 255, 200);
+                noStroke();
+                rect(-powerup.width/2 + 2, -5, powerup.width - 4, 10);
+                
+                // Tapa
+                fill(200, 200, 200);
+                stroke(150, 150, 150);
+                strokeWeight(1);
+                rect(-powerup.width/2, -powerup.height/2 - 3, powerup.width, 6);
+                
+                // Brillo simple
+                fill(255, 255, 255, 150);
+                noStroke();
+                ellipse(-2, -8, 4, 8);
+                
+                pop();
+            }
+        }
+        
+        function spawnObstacle() {
+            let obstacleTypes = [
+                { width: 25, height: 40, type: 'barrier' },
+                { width: 40, height: 60, type: 'block' },
+                { width: 20, height: 80, type: 'pole' }
+            ];
+            
+            let type = random(obstacleTypes);
+            let obstacle = {
+                x: width + 50,
+                y: 290 - type.height, // A la altura del suelo (350 es donde empieza el suelo)
+                width: type.width,
+                height: type.height,
+                type: type.type
+            };
+            obstacles.push(obstacle);
+        }
+        
+        function spawnProjectile() {
+            let projectile = {
+                x: width + 20,
+                y: random(150, 280), // Altura variable
+                width: 15,
+                height: 15,
+                velX: -(gameSpeed + random(3, 8)), // Más rápido
+                velY: random(-2, 2),
+                rotation: 0
+            };
+            projectiles.push(projectile);
+        }
+        
+        function spawnPowerup() {
+            let powerup = {
+                x: width + 30,
+                y: random(180, 300),
+                width: 20,
+                height: 30,
+                type: 'invulnerability',
+                collected: false,
+                bobOffset: random(TWO_PI)
+            };
+            powerups.push(powerup);
+        }
+        
+        function updateObstacles() {
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].x -= gameSpeed;
+                
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.splice(i, 1);
+                    score += 10;
+                }
+            }
+        }
+        
+        function updateProjectiles() {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let proj = projectiles[i];
+                proj.x += proj.velX;
+                proj.y += proj.velY;
+                proj.rotation += 0.3; // Rotación más rápida
+                
+                if (proj.x < -50) {
+                    projectiles.splice(i, 1);
+                }
+            }
+        }
+        
+        function updatePowerups() {
+            for (let i = powerups.length - 1; i >= 0; i--) {
+                let powerup = powerups[i];
+                powerup.x -= gameSpeed * 0.8;
+                
+                if (powerup.x < -50 || powerup.collected) {
+                    powerups.splice(i, 1);
+                }
+            }
+        }
+        
+        function checkCollisions() {
+            // Colisiones con obstáculos
+            for (let obstacle of obstacles) {
+                if (player.x < obstacle.x + obstacle.width &&
+                    player.x + player.width > obstacle.x &&
+                    player.y < obstacle.y + obstacle.height &&
+                    player.y + player.height > obstacle.y) {
+                    
+                    if (!player.invulnerable) {
+                        damagePlayer();
+                    }
+                }
+            }
+            
+            // Colisiones con proyectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                let proj = projectiles[i];
+                if (player.x < proj.x + proj.width &&
+                    player.x + player.width > proj.x &&
+                    player.y < proj.y + proj.height &&
+                    player.y + player.height > proj.y) {
+                    
+                    if (!player.invulnerable) {
+                        damagePlayer();
+                        projectiles.splice(i, 1);
+                    }
+                }
+            }
+            
+            // Colisiones con powerups
+            for (let i = powerups.length - 1; i >= 0; i--) {
+                let powerup = powerups[i];
+                if (player.x < powerup.x + powerup.width &&
+                    player.x + player.width > powerup.x &&
+                    player.y < powerup.y + powerup.height &&
+                    player.y + player.height > powerup.y) {
+                    
+                    collectPowerup(powerup);
+                    powerups.splice(i, 1);
+                }
+            }
+        }
+        
+        function damagePlayer() {
+            player.health--;
+            player.invulnerable = true;
+            player.invulnerableTime = 120;
+            player.state = 'damage';
+            
+            // Crear partículas de impacto
+            for (let i = 0; i < 10; i++) {
+                sparkles.push({
+                    x: player.x + random(player.width),
+                    y: player.y + random(player.height),
+                    size: random(2, 5),
+                    color: [255, 100, 100],
+                    life: 255,
+                    decay: random(5, 10)
+                });
+            }
+            
+            if (player.health <= 0) {
+                gameState = 'gameOver';
+            }
+        }
+        
+        function collectPowerup(powerup) {
+            if (powerup.type === 'invulnerability') {
+                player.invulnerable = true;
+                player.invulnerableTime = 300; // 5 segundos
+                score += 50;
+                
+                // Crear partículas de recolección
+                for (let i = 0; i < 15; i++) {
+                    sparkles.push({
+                        x: powerup.x + random(powerup.width),
+                        y: powerup.y + random(powerup.height),
+                        size: random(3, 6),
+                        color: [100, 255, 100],
+                        life: 255,
+                        decay: random(3, 8)
+                    });
+                }
+            }
+        }
+        
+        function createSparkle() {
+            return {
+                x: random(width),
+                y: random(80, 350),
+                size: random(1, 3),
+                color: [random(100, 255), random(100, 255), random(100, 255)],
+                life: 255,
+                decay: random(2, 5)
+            };
+        }
+        
+        function createSmoke() {
+            return {
+                x: player.x + player.width,
+                y: player.y + player.height,
+                size: random(5, 15),
+                velX: -random(1, 3),
+                velY: random(-1, 1),
+                life: 100,
+                decay: 2
+            };
+        }
+        
+        function updateParticles() {
+            // Actualizar sparkles
+            for (let i = sparkles.length - 1; i >= 0; i--) {
+                let s = sparkles[i];
+                s.life -= s.decay;
+                
+                if (s.life <= 0) {
+                    sparkles.splice(i, 1);
+                    sparkles.push(createSparkle());
+                }
+            }
+            
+            // Actualizar humo
+            for (let i = smokeParticles.length - 1; i >= 0; i--) {
+                let smoke = smokeParticles[i];
+                smoke.x += smoke.velX;
+                smoke.y += smoke.velY;
+                smoke.life -= smoke.decay;
+                smoke.size += 0.2;
+                
+                if (smoke.life <= 0) {
+                    smokeParticles.splice(i, 1);
+                }
+            }
+        }
+        
+        function drawParticles() {
+            // Dibujar sparkles sin efectos neón
+            for (let s of sparkles) {
+                fill(s.color[0], s.color[1], s.color[2], s.life);
+                noStroke();
+                ellipse(s.x, s.y, s.size, s.size);
+            }
+            
+            // Dibujar humo
+            for (let smoke of smokeParticles) {
+                fill(255, 255, 255, smoke.life);
+                noStroke();
+                ellipse(smoke.x, smoke.y, smoke.size, smoke.size);
+            }
+        }
+        
+        function drawUI() {
+            // Tiempo restante con barra simple
+            let timeLeft = totalGameTime - currentTime;
+            let minutes = Math.floor(timeLeft / 3600);
+            let seconds = Math.floor((timeLeft % 3600) / 60);
+            
+            // Barra de progreso simple
+            let progressWidth = 300;
+            let progressHeight = 20;
+            let progressX = (width - progressWidth) / 2;
+            let progressY = 20;
+            
+            // Fondo de la barra
+            fill(40, 40, 50);
+            stroke(80, 80, 90);
+            strokeWeight(2);
+            rect(progressX, progressY, progressWidth, progressHeight);
+            
+            // Progreso
+            let progressFill = timeProgress * progressWidth;
+            fill(100, 150, 100);
+            noStroke();
+            rect(progressX + 2, progressY + 2, progressFill - 4, progressHeight - 4);
+            
+            // Texto del tiempo
+            fill(200, 200, 220);
+            stroke(0);
+            strokeWeight(1);
+            textAlign(CENTER);
+            textSize(16);
+            text(`TIEMPO: ${minutes}:${seconds.toString().padStart(2, '0')}`, width/2, progressY + progressHeight + 25);
+            
+            // Velocidad
+            fill(180, 180, 200);
+            textAlign(RIGHT);
+            textSize(14);
+            text(`VELOCIDAD: ${gameSpeed.toFixed(1)}`, width - 20, height - 60);
+            
+            // Puntaje
+            fill(180, 200, 180);
+            textAlign(LEFT);
+            textSize(18);
+            text(`PUNTOS: ${score}`, 20, 35);
+            
+            // Vidas simples
+            for (let i = 0; i < player.health; i++) {
+                fill(200, 100, 100);
+                noStroke();
+                ellipse(width - 40 - (i * 35), 70, 20, 20);
+            }
+            
+            noStroke();
+        }
+        
+        function drawVictory() {
+            fill(0, 0, 0, 200);
+            rect(0, 0, width, height);
+            
+            fill(100, 255, 100);
+            textAlign(CENTER);
+            textSize(48);
+            text('¡LIBERTAD!', width/2, height/2 - 40);
+            
+            fill(200, 200, 200);
+            textSize(24);
+            text('¡Escapaste del underground!', width/2, height/2);
+            
+            fill(150, 150, 200);
+            textSize(18);
+            text(`Puntuación Final: ${score}`, width/2, height/2 + 40);
+            text(`Velocidad Máxima: ${gameSpeed.toFixed(1)}`, width/2, height/2 + 65);
+            
+            text('Presiona R para una nueva fuga', width/2, height/2 + 100);
+        }
+        
+        function drawGameOver() {
+            fill(0, 0, 0, 200);
+            rect(0, 0, width, height);
+            
+            fill(255, 100, 100);
+            textAlign(CENTER);
+            textSize(48);
+            text('CAPTURADO', width/2, height/2 - 40);
+            
+            fill(200, 200, 200);
+            textSize(20);
+            text('No lograste escapar del underground', width/2, height/2);
+            
+            fill(150, 150, 200);
+            textSize(16);
+            text(`Distancia recorrida: ${Math.floor(timeProgress * 100)}%`, width/2, height/2 + 30);
+            text(`Puntos: ${score}`, width/2, height/2 + 50);
+            
+            fill(150, 200, 150);
+            textSize(18);
+            text('Presiona R para intentar otra fuga', width/2, height/2 + 90);
+        }
+        
+        function keyPressed() {
+            if (key === ' ') {
+                if (gameState === 'playing' && player.grounded) {
+                    player.velY = -18; // Salto más alto
+                    player.grounded = false;
+                    player.state = 'jumping';
+                    
+                    // Crear partículas de salto
+                    for (let i = 0; i < 5; i++) {
+                        smokeParticles.push({
+                            x: player.x + random(player.width),
+                            y: player.y + player.height,
+                            size: random(8, 15),
+                            velX: random(-2, 2),
+                            velY: random(-3, -1),
+                            life: 60,
+                            decay: 2
+                        });
+                    }
+                }
+            }
+            
+            if (key === 'r' || key === 'R') {
+                restartGame();
+            }
+        }
+        
+        function restartGame() {
+            // Reiniciar variables
+            player.x = 100;
+            player.y = 190; // En el suelo
+            player.velY = 0;
+            player.grounded = true;
+            player.state = 'idle';
+            player.health = 3;
+            player.invulnerable = false;
+            player.invulnerableTime = 0;
+            
+            obstacles = [];
+            projectiles = [];
+            powerups = [];
+            sparkles = [];
+            smokeParticles = [];
+            score = 0;
+            gameSpeed = 8;
+            gameState = 'playing';
+            backgroundX = 0;
+            currentTime = 0;
+            timeProgress = 0;
+            
+            // Reiniciar timers
+            obstacleTimer = 0;
+            projectileTimer = 0;
+            powerupTimer = 0;
+            
+            // Reinicializar elementos del túnel
+            pipes = [];
+            graffitis = [];
+            generateTunnelElements();
+            
+            // Crear partículas iniciales
+            for (let i = 0; i < 20; i++) {
+                sparkles.push(createSparkle());
+            }
+            
+            spawnObstacle();
+        }
+    </script>
+</body>
+</html>
